@@ -19,8 +19,7 @@ pydantic-settings>=2.6.0
 
 # Configuration and observability
 python-dotenv>=1.0.1
-langfuse>=4.7.0
+langfuse>=4.15.1,<5.0.0
 
 # Development and verification
 pytest>=8.3.0
-

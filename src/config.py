@@ -29,7 +29,7 @@ class Settings(BaseSettings):
         default="https://cloud.langfuse.com", validation_alias="LANGFUSE_BASE_URL"
     )
     langfuse_tracing_environment: str = Field(
-        default="local", validation_alias="LANGFUSE_TRACING_ENVIRONMENT"
+        default="development", validation_alias="LANGFUSE_TRACING_ENVIRONMENT"
     )
 
 
