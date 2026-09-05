@@ -457,7 +457,7 @@ def _generation_page() -> None:
 
 
 def _talk_to_data_page() -> None:
-    st.markdown('<div class="app-kicker">Phases 2 & 3</div>', unsafe_allow_html=True)
+    st.markdown('<div class="app-kicker">Dataset workspace</div>', unsafe_allow_html=True)
     st.title("Talk to your data")
     st.markdown('<p class="app-subtitle">Your generated datasets are available here and ready for natural-language querying.</p>', unsafe_allow_html=True)
     artifacts = list_saved_datasets()
@@ -482,7 +482,7 @@ def _talk_to_data_page() -> None:
         col_c.metric("PostgreSQL", "Ready" if selected_artifact.database_saved else "Local only")
         preview_table = st.selectbox("Inspect table", list(saved_data))
         st.dataframe(saved_data[preview_table].head(20), width="stretch", hide_index=True)
-        st.chat_input("Natural-language querying will be enabled in Phase 2", disabled=True)
+        st.chat_input("Natural-language querying will be available here", disabled=True)
 
 
 _init_state()
