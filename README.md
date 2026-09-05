@@ -2,6 +2,8 @@
 
 ByGrid University practice project for generating valid relational synthetic data and querying it conversationally.
 
+[View the final submission UI screenshot](docs/screenshots/submission-ui-final.jpg)
+
 ## Features
 
 - Upload `.sql`, `.txt`, or `.ddl` schemas, or use any of the three supplied samples.
