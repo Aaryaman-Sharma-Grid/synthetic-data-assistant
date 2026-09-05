@@ -1,0 +1,26 @@
+# Core UI and data
+streamlit>=1.40.0
+pandas>=2.2.0
+plotly>=5.24.0
+
+# Google Gen AI SDK (Vertex AI / Gemini)
+google-genai>=1.0.0
+google-auth>=2.35.0
+
+# PostgreSQL
+psycopg[binary]>=3.2.0
+sqlalchemy>=2.0.0
+
+# Synthetic data and SQL parsing
+faker>=35.0.0
+sqlglot>=26.0.0
+pydantic>=2.9.0
+pydantic-settings>=2.6.0
+
+# Configuration and observability
+python-dotenv>=1.0.1
+langfuse>=4.7.0
+
+# Development and verification
+pytest>=8.3.0
+
