@@ -112,7 +112,6 @@ def _schema_description(schema) -> pd.DataFrame:
 
 
 def _generation_page() -> None:
-    st.markdown('<div class="app-kicker">Phase 1</div>', unsafe_allow_html=True)
     st.title("Synthetic Data Generation")
     st.markdown('<p class="app-subtitle">Upload a DDL schema, describe the data you need, and generate validated relational datasets.</p>', unsafe_allow_html=True)
 

@@ -1,4 +1,4 @@
-"""Render a presentation-friendly HTML excerpt of the Phase 1 implementation."""
+"""Render a presentation-friendly HTML excerpt of the generation workflow."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ document = f"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Data Assistant — Phase 1 code</title>
+<title>Data Assistant — generation workflow code</title>
 <style>
 * {{ box-sizing: border-box; }}
 body {{ margin: 0; background: #0b1020; color: #d8dee9; font-family: Inter, ui-sans-serif, system-ui; }}
@@ -60,11 +60,11 @@ pre {{ margin: 0; font: 12.6px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco,
     <div class="file">editor.py</div>
     <div class="file">storage.py</div>
     <div class="label">Tests</div>
-    <div class="file">test_phase1.py</div>
+    <div class="file">test_synthetic_data.py</div>
   </aside>
   <main class="main">
     <div class="header">
-      <div><div class="title">Phase 1 generation workflow</div><div class="meta">app.py · Streamlit + Gemini + PostgreSQL</div></div>
+      <div><div class="title">Synthetic data generation workflow</div><div class="meta">app.py · Streamlit + Gemini + PostgreSQL</div></div>
       <div class="pill">7 tests passing</div>
     </div>
     <div class="editor"><pre>{rendered_lines}</pre></div>
@@ -75,4 +75,3 @@ pre {{ margin: 0; font: 12.6px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco,
 
 OUTPUT.write_text(document, encoding="utf-8")
 print(OUTPUT)
-

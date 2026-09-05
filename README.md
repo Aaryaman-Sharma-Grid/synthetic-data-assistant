@@ -2,7 +2,7 @@
 
 ByGrid University practice project for generating valid relational synthetic data and querying it conversationally.
 
-## Implemented Phase 1
+## Features
 
 - Upload `.sql`, `.txt`, or `.ddl` schemas, or use any of the three supplied samples.
 - Parse tables, columns, MySQL-style `ENUM`/`AUTO_INCREMENT`, defaults, checks, primary keys, unique keys, and foreign keys.
@@ -43,5 +43,5 @@ src/editor.py             Natural-language table changes
 src/storage.py            PostgreSQL/local persistence and ZIP export
 src/observability.py      Optional Langfuse tracing
 data/schemas/             Course sample DDL files
-tests/test_phase1.py      Phase 1 automated checks
+tests/test_synthetic_data.py  Automated generation checks
 ```
