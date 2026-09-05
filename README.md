@@ -12,7 +12,7 @@ ByGrid University practice project for generating valid relational synthetic dat
 - Apply natural-language edits to individual tables through Gemini-generated safe operations.
 - Preview every table and download one CSV or a ZIP containing all CSV files, the DDL, and a manifest.
 - Persist each successful dataset locally and into an isolated PostgreSQL schema for Phases 2–3.
-- Emit Langfuse observations when Langfuse credentials are configured.
+- Trace complete generation and refinement workflows in Langfuse with nested spans, Gemini token usage, stable feature tags, explicit development environments, and credential masking.
 
 ## Run locally
 
@@ -29,8 +29,19 @@ Open <http://localhost:8501>. The project uses Application Default Credentials f
 
 ```bash
 source .venv/bin/activate
-pytest -q
+python -m pytest -q
 ```
+
+## Verify Langfuse
+
+Add the Langfuse public key, secret key, and matching cloud-region URL to `.env`, then run:
+
+```bash
+source .venv/bin/activate
+python -m scripts.verify_langfuse
+```
+
+The command authenticates without printing credentials, emits a diagnostic trace, flushes it, and prints the private Langfuse trace URL. Application traces use one root observation per generation or table-refinement request, with nested observations for Gemini, DDL parsing, row generation, validation, and persistence.
 
 ## Project structure
 
@@ -42,6 +53,7 @@ src/llm.py                Gemini streaming and structured-output helpers
 src/editor.py             Natural-language table changes
 src/storage.py            PostgreSQL/local persistence and ZIP export
 src/observability.py      Optional Langfuse tracing
+scripts/verify_langfuse.py  Credential and ingestion check
 data/schemas/             Course sample DDL files
 tests/test_synthetic_data.py  Automated generation checks
 ```

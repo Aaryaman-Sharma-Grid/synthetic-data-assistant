@@ -13,7 +13,7 @@ from src.editor import apply_edit_plan
 from src.generator import SyntheticDataGenerator, validate_dataset
 from src.llm import create_gemini_client, create_generation_plan, create_table_edit_plan
 from src.models import GenerationPlan
-from src.observability import langfuse_configured, observe_operation
+from src.observability import langfuse_configured, observe_operation, update_observation
 from src.schema_parser import SchemaParseError, parse_ddl
 from src.storage import build_zip_archive, list_saved_datasets, load_saved_dataset, save_dataset
 
@@ -153,24 +153,42 @@ def _generation_page() -> None:
                 display_name = sample_name.split(" (")[0]
 
             try:
-                with st.status("Building your dataset…", expanded=True) as status:
-                    st.write("Parsing tables, columns, and constraints")
-                    schema = parse_ddl(ddl)
-                    st.write(f"Found {len(schema.tables)} tables and {sum(len(table.columns) for table in schema.tables)} columns")
+                with observe_operation(
+                    settings,
+                    "generate-synthetic-dataset",
+                    input_data=prompt or "Create realistic, internally consistent business data.",
+                    metadata={
+                        "schema_source": "upload" if uploaded is not None else "sample",
+                        "schema_name": display_name,
+                        "rows_per_table": int(rows_per_table),
+                        "temperature": float(temperature),
+                        "seed": int(seed),
+                        "gemini_planning": use_gemini,
+                    },
+                    tags=["synthetic-data", "data-generation"],
+                    trace_name="generate-synthetic-dataset",
+                ) as workflow_observation:
+                    with st.status("Building your dataset…", expanded=True) as status:
+                        st.write("Parsing tables, columns, and constraints")
+                        with observe_operation(
+                            settings,
+                            "parse-ddl-schema",
+                            input_data={"schema_name": display_name, "ddl_characters": len(ddl)},
+                        ) as parse_observation:
+                            schema = parse_ddl(ddl)
+                            column_count = sum(len(table.columns) for table in schema.tables)
+                            update_observation(
+                                parse_observation,
+                                output={"tables": len(schema.tables), "columns": column_count},
+                            )
+                        st.write(f"Found {len(schema.tables)} tables and {column_count} columns")
 
-                    plan = GenerationPlan()
-                    notes: list[str] = []
-                    if use_gemini:
-                        st.write("Asking Gemini for a structured generation plan")
-                        try:
-                            client = create_gemini_client(settings)
-                            with observe_operation(
-                                settings,
-                                "create-generation-plan",
-                                as_type="generation",
-                                input_data={"instructions": prompt, "tables": [table.name for table in schema.tables]},
-                                model=settings.gemini_model,
-                            ) as observation:
+                        plan = GenerationPlan()
+                        notes: list[str] = []
+                        if use_gemini:
+                            st.write("Asking Gemini for a structured generation plan")
+                            try:
+                                client = create_gemini_client(settings)
                                 plan = create_generation_plan(
                                     client,
                                     settings,
@@ -179,37 +197,83 @@ def _generation_page() -> None:
                                     float(temperature),
                                     int(max_tokens),
                                 )
-                                if observation is not None:
-                                    observation.update(output=plan.model_dump(mode="json"))
-                            client.close()
-                        except Exception as exc:
-                            notes.append(f"Gemini planning was unavailable; deterministic inference was used ({exc}).")
+                                client.close()
+                            except Exception as exc:
+                                notes.append(f"Gemini planning was unavailable; deterministic inference was used ({exc}).")
 
-                    st.write(f"Generating {int(rows_per_table):,} rows for each table")
-                    generator = SyntheticDataGenerator(
-                        schema,
-                        rows_per_table=int(rows_per_table),
-                        seed=int(seed),
-                        plan=plan,
-                    )
-                    data = generator.generate()
-                    st.write("Validating nullability, uniqueness, checks, and foreign keys")
-                    issues = validate_dataset(schema, data)
-                    errors = [issue for issue in issues if issue.level == "error"]
-                    if errors:
-                        raise RuntimeError("; ".join(issue.message for issue in errors[:5]))
+                        st.write(f"Generating {int(rows_per_table):,} rows for each table")
+                        with observe_operation(
+                            settings,
+                            "generate-relational-rows",
+                            as_type="tool",
+                            input_data={
+                                "tables": [table.name for table in schema.tables],
+                                "rows_per_table": int(rows_per_table),
+                            },
+                            metadata={"seed": int(seed), "locale": plan.locale},
+                        ) as generation_observation:
+                            generator = SyntheticDataGenerator(
+                                schema,
+                                rows_per_table=int(rows_per_table),
+                                seed=int(seed),
+                                plan=plan,
+                            )
+                            data = generator.generate()
+                            row_counts = {name: len(frame) for name, frame in data.items()}
+                            update_observation(generation_observation, output={"row_counts": row_counts})
 
-                    st.write("Saving CSV files and loading tables into PostgreSQL")
-                    artifact = save_dataset(settings, schema, data, ddl, prompt, display_name)
-                    notes.extend(schema.warnings)
-                    notes.extend(artifact.warnings)
-                    st.session_state.generated_data = data
-                    st.session_state.parsed_schema = schema
-                    st.session_state.source_ddl = ddl
-                    st.session_state.artifact = artifact
-                    st.session_state.generation_plan = plan
-                    st.session_state.generation_notes = notes
-                    status.update(label="Dataset generated and validated", state="complete", expanded=False)
+                        st.write("Validating nullability, uniqueness, checks, and foreign keys")
+                        with observe_operation(
+                            settings,
+                            "validate-relational-integrity",
+                            as_type="evaluator",
+                            input_data={"tables": len(data), "rows": sum(row_counts.values())},
+                        ) as validation_observation:
+                            issues = validate_dataset(schema, data)
+                            errors = [issue for issue in issues if issue.level == "error"]
+                            update_observation(
+                                validation_observation,
+                                output={"passed": not errors, "issues": len(issues), "errors": len(errors)},
+                            )
+                            if errors:
+                                raise RuntimeError("; ".join(issue.message for issue in errors[:5]))
+
+                        st.write("Saving CSV files and loading tables into PostgreSQL")
+                        with observe_operation(
+                            settings,
+                            "persist-generated-dataset",
+                            as_type="tool",
+                            input_data={"schema_name": display_name, "row_counts": row_counts},
+                        ) as persistence_observation:
+                            artifact = save_dataset(settings, schema, data, ddl, prompt, display_name)
+                            update_observation(
+                                persistence_observation,
+                                output={
+                                    "dataset_id": artifact.dataset_id,
+                                    "postgres_schema": artifact.postgres_schema,
+                                    "database_saved": artifact.database_saved,
+                                },
+                            )
+
+                        notes.extend(schema.warnings)
+                        notes.extend(artifact.warnings)
+                        st.session_state.generated_data = data
+                        st.session_state.parsed_schema = schema
+                        st.session_state.source_ddl = ddl
+                        st.session_state.artifact = artifact
+                        st.session_state.generation_plan = plan
+                        st.session_state.generation_notes = notes
+                        update_observation(
+                            workflow_observation,
+                            output={
+                                "dataset_id": artifact.dataset_id,
+                                "tables": len(data),
+                                "rows": sum(row_counts.values()),
+                                "validation": "passed",
+                                "database_saved": artifact.database_saved,
+                            },
+                        )
+                        status.update(label="Dataset generated and validated", state="complete", expanded=False)
             except SchemaParseError as exc:
                 st.error(str(exc))
             except Exception as exc:
@@ -262,43 +326,107 @@ def _generation_page() -> None:
                 st.warning("Enter an edit instruction first.")
             else:
                 try:
-                    table_schema = schema.table(selected_table)
-                    client = create_gemini_client(settings)
-                    columns = [
-                        {
-                            "name": column.name,
-                            "type": column.data_type,
-                            "primary_key": column.primary_key,
-                            "foreign_key": any(fk.column.lower() == column.name.lower() for fk in table_schema.foreign_keys),
-                        }
-                        for column in table_schema.columns
-                    ]
-                    with st.spinner("Gemini is translating your feedback into safe edits…"):
-                        edit_plan = create_table_edit_plan(
-                            client,
-                            settings,
-                            selected_table,
-                            columns,
-                            frame.head(5).to_dict(orient="records"),
-                            feedback,
-                        )
-                        client.close()
-                        updated, edit_notes = apply_edit_plan(schema, data, selected_table, edit_plan, int(seed))
-                        issues = validate_dataset(schema, updated)
-                        errors = [issue for issue in issues if issue.level == "error"]
-                        if errors:
-                            raise RuntimeError("; ".join(issue.message for issue in errors[:5]))
-                        new_artifact = save_dataset(
-                            settings,
-                            schema,
-                            updated,
-                            st.session_state.source_ddl,
-                            f"{prompt}\nRevision: {feedback}".strip(),
-                            f"{artifact.display_name} – revised",
-                        )
-                        st.session_state.generated_data = updated
-                        st.session_state.artifact = new_artifact
-                        st.session_state.generation_notes = edit_notes + new_artifact.warnings
+                    with observe_operation(
+                        settings,
+                        "refine-synthetic-table",
+                        input_data=feedback,
+                        metadata={
+                            "dataset_id": artifact.dataset_id,
+                            "table": selected_table,
+                            "rows": len(frame),
+                        },
+                        tags=["synthetic-data", "table-refinement"],
+                        trace_name="refine-synthetic-table",
+                    ) as refinement_observation:
+                        table_schema = schema.table(selected_table)
+                        client = create_gemini_client(settings)
+                        columns = [
+                            {
+                                "name": column.name,
+                                "type": column.data_type,
+                                "primary_key": column.primary_key,
+                                "foreign_key": any(
+                                    fk.column.lower() == column.name.lower()
+                                    for fk in table_schema.foreign_keys
+                                ),
+                            }
+                            for column in table_schema.columns
+                        ]
+                        with st.spinner("Gemini is translating your feedback into safe edits…"):
+                            edit_plan = create_table_edit_plan(
+                                client,
+                                settings,
+                                selected_table,
+                                columns,
+                                frame.head(5).to_dict(orient="records"),
+                                feedback,
+                            )
+                            client.close()
+
+                            with observe_operation(
+                                settings,
+                                "apply-table-edit",
+                                as_type="tool",
+                                input_data=edit_plan.model_dump(mode="json"),
+                                metadata={"table": selected_table, "seed": int(seed)},
+                            ) as edit_observation:
+                                updated, edit_notes = apply_edit_plan(
+                                    schema, data, selected_table, edit_plan, int(seed)
+                                )
+                                update_observation(
+                                    edit_observation,
+                                    output={"rows_updated": len(updated[selected_table]), "notes": edit_notes},
+                                )
+
+                            with observe_operation(
+                                settings,
+                                "validate-refined-dataset",
+                                as_type="evaluator",
+                                input_data={"table": selected_table, "rows": len(updated[selected_table])},
+                            ) as validation_observation:
+                                issues = validate_dataset(schema, updated)
+                                errors = [issue for issue in issues if issue.level == "error"]
+                                update_observation(
+                                    validation_observation,
+                                    output={"passed": not errors, "issues": len(issues), "errors": len(errors)},
+                                )
+                                if errors:
+                                    raise RuntimeError("; ".join(issue.message for issue in errors[:5]))
+
+                            with observe_operation(
+                                settings,
+                                "persist-refined-dataset",
+                                as_type="tool",
+                                input_data={"source_dataset_id": artifact.dataset_id},
+                            ) as persistence_observation:
+                                new_artifact = save_dataset(
+                                    settings,
+                                    schema,
+                                    updated,
+                                    st.session_state.source_ddl,
+                                    f"{prompt}\nRevision: {feedback}".strip(),
+                                    f"{artifact.display_name} – revised",
+                                )
+                                update_observation(
+                                    persistence_observation,
+                                    output={
+                                        "dataset_id": new_artifact.dataset_id,
+                                        "database_saved": new_artifact.database_saved,
+                                    },
+                                )
+
+                            st.session_state.generated_data = updated
+                            st.session_state.artifact = new_artifact
+                            st.session_state.generation_notes = edit_notes + new_artifact.warnings
+                            update_observation(
+                                refinement_observation,
+                                output={
+                                    "dataset_id": new_artifact.dataset_id,
+                                    "table": selected_table,
+                                    "summary": edit_plan.summary,
+                                    "validation": "passed",
+                                },
+                            )
                     st.success(edit_plan.summary)
                     st.rerun()
                 except Exception as exc:
