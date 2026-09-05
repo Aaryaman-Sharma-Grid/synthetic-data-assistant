@@ -11,7 +11,7 @@ ByGrid University practice project for generating valid relational synthetic dat
 - Validate nullability, uniqueness, enums, checks, lengths, and foreign-key references before saving.
 - Apply natural-language edits to individual tables through Gemini-generated safe operations.
 - Preview every table and download one CSV or a ZIP containing all CSV files, the DDL, and a manifest.
-- Persist each successful dataset locally and into an isolated PostgreSQL schema for Phases 2–3.
+- Persist each successful dataset locally and into an isolated PostgreSQL schema for later conversational querying.
 - Trace complete generation and refinement workflows in Langfuse with nested spans, Gemini token usage, stable feature tags, explicit development environments, and credential masking.
 
 ## Run locally
